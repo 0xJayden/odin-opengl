@@ -16,7 +16,7 @@ import gl "vendor:OpenGL"
 
 positions: [dynamic][3]f32
 
-camera_pos := glm.vec3([3]f32 { 0.0, 0.0, 2.0 })
+camera_pos := glm.vec3([3]f32 { 0.0, 52.0, 2.0 })
 camera_front := glm.vec3([3]f32 { 0.0, 0.0, -1.0 })
 camera_up := glm.vec3([3]f32 { 0.0, 1.0, 0.0 })
 
@@ -34,6 +34,9 @@ jump_rate: f32
 delta_time: f64 = 0.0
 last_frame: f64 = 0.0
 
+mouse_click_time: f64 = 0.0
+mouse_click_delay := false
+
 error_callback :: proc "c" (code: i32, desc: cstring) {
     context = runtime.default_context()
     fmt.println(desc, code)
@@ -46,7 +49,7 @@ key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods
 }
 
 get_texture :: proc(program: u32) -> u32 {
-    imageData, err := image.load_from_file("/Users/jaydendavila/odin_example/brick.png")
+    imageData, err := image.load_from_file("/Users/jaydendavila/odin-opengl/brick.png")
     fmt.println(err)
     width := cast(i32)imageData.width
     height := cast(i32)imageData.height
@@ -137,6 +140,15 @@ process_input :: proc(window: glfw.WindowHandle) {
             jumping = true
         }
 
+        if glfw.GetMouseButton(window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS {
+            mouse_click_time = glfw.GetTime()
+            if mouse_click_delay {
+                return
+            }
+            destroy_block()
+            mouse_click_delay = true
+        }
+
         if jumping {
             camera_pos += jump_speed * glm.vec3([3]f32 { 0.0, 1.0, 0.0 })
             if is_collision_down() {
@@ -147,7 +159,7 @@ process_input :: proc(window: glfw.WindowHandle) {
             jump_speed -= jump_rate
         }
 
-        /* if !is_collision_down() && !jumping {
+        if !is_collision_down() && !jumping {
             jump_speed = camera_speed * 2
             camera_pos += jump_speed * glm.vec3([3]f32 { 0.0, -1.0, 0.0 })
             jump_speed -= jump_rate
@@ -155,25 +167,42 @@ process_input :: proc(window: glfw.WindowHandle) {
                 camera_pos[1] = glm.ceil(camera_pos[1] * 10) / 10
                 return
             }
-        } */
+        }
 }
 
- NUM_STEPS := 256;
+ Y_CHUNK_MAX_DIST: f32 = 100.0;
+ X_CHUNK_MAX_DIST: f32 = 8.0
+ Z_CHUNK_MAX_DIST: f32 = 8.0
  MAX_DIST := 1000.0;
  MIN_DIST := 0.00001;
 
 gen_positions :: proc() {
-    prev_pos := [3]f32 { 0.0, 0.0, 0.0 }
+    x: f32 = 0.0
+    y: f32 = 0.0
+    z: f32 = 0.0
 
-    for i := 0; i < NUM_STEPS; i += 1 {
-        if i > 0 {
-            prev_pos = positions[i - 1.0]
+     for y < Y_CHUNK_MAX_DIST {
+        for x < X_CHUNK_MAX_DIST {
+            if y < 50 {
+                append(&positions, [3]f32 { x, y, z })
+            }
+
+            for z < Z_CHUNK_MAX_DIST {
+                if y < 50 {
+                    append(&positions, [3]f32 { x, y, z })
+                }
+                z += 0.4
+            }
+            x += 0.4
+            z = 0.0
         }
 
-        pos := camera_pos + glm.vec3(prev_pos) * camera_front
-        noise_sample := noise.noise_3d_improve_xz(1, [3]f64 {cast(f64)pos[0], cast(f64)pos[1], cast(f64)pos[2]})
-        
-        append(&positions, [3]f32{ pos[0] + noise_sample * 6, pos[1] + noise_sample * 6, pos[2] + noise_sample * 6 })
+        if y < 50 {
+            append(&positions, [3]f32 { x, y, z })
+        }
+        y += 0.4
+        x = 0.0
+        z = 0.0
     }
 }
 
@@ -200,7 +229,7 @@ get_collisions :: proc() -> [dynamic][3]f32 {
                 camera_pos[0] >= o[0] - 0.4 &&
                 camera_pos[0] <= o[0] + 0.4 &&
                 camera_pos[1] >= o[1] - 0.4 &&
-                camera_pos[1] <= o[1] + 0.4 &&
+                camera_pos[1] <= o[1] + 1.0 &&
                 camera_pos[2] >= o[2] - 0.4 &&
                 camera_pos[2] <= o[2] + 0.4
         if collision {
@@ -286,13 +315,70 @@ is_collision_down :: proc() -> bool {
         if len(collisions) > 0 {
             for &o in collisions {
                 collision := 
-                glm.dot(bottom_vec_direction(), glm.normalize(distance_from(cast(glm.vec3)o))) < 0
+                glm.dot(bottom_vec_direction(), glm.normalize(distance_from(cast(glm.vec3)o))) < 1
                 if collision {
                    return true
                }
             }
         }
     return false
+}
+
+place_block :: proc() {
+    j := 0
+    pos := camera_pos
+    max_steps := 10
+
+    for j < max_steps {
+        i := 0
+
+        for &o in positions {
+            if
+                pos[0] >= o[0] - 0.25 &&
+                pos[0] <= o[0] + 0.25 &&
+                pos[1] >= o[1] - 0.25 &&
+                pos[1] <= o[1] + 0.25 &&
+                pos[2] >= o[2] - 0.25 &&
+                pos[2] <= o[2] + 0.25 {
+                    append(&positions, [3]f32 { o[0], o[1] + 0.4, o[2] })
+                    return
+                }
+
+                i += 1
+        }
+
+        pos += 0.4 * camera_front
+        j += 1
+    }
+}
+
+destroy_block :: proc() {
+    j := 0
+    pos := camera_pos 
+    max_steps := 10
+
+    for j < max_steps {
+        i := 0
+
+        for &o in positions {
+            if
+                pos[0] >= o[0] - 0.25 &&
+                pos[0] <= o[0] + 0.25 &&
+                pos[1] >= o[1] - 0.25 &&
+                pos[1] <= o[1] + 0.25 &&
+                pos[2] >= o[2] - 0.25 &&
+                pos[2] <= o[2] + 0.25 {
+                    unordered_remove(&positions, i)
+                    j = max_steps
+                    return
+                }
+
+                i += 1
+        }
+
+        pos += 0.4 * camera_front
+        j += 1
+    }
 }
 
 
@@ -392,8 +478,8 @@ main :: proc() {
     gl.BufferData(gl.ARRAY_BUFFER, size_of(vertices), &vertices, gl.STATIC_DRAW);
     // gl.BufferData(gl.ARRAY_BUFFER, size_of(vs), &vs, gl.STATIC_DRAW);
 
-    vertex_shader_text, verr := os.read_entire_file_from_filename("/Users/jaydendavila/odin_example/vertex_shader.glsl")
-    fragment_shader_text, ferr := os.read_entire_file_from_filename("/Users/jaydendavila/odin_example/fragment_shader.glsl")
+    vertex_shader_text, verr := os.read_entire_file_from_filename("/Users/jaydendavila/odin-opengl/vertex_shader.glsl")
+    fragment_shader_text, ferr := os.read_entire_file_from_filename("/Users/jaydendavila/odin-opengl/fragment_shader.glsl")
 
     program, program_ok := gl.load_shaders_source(string(vertex_shader_text), string(fragment_shader_text))
     
@@ -449,6 +535,12 @@ main :: proc() {
         delta_time = current_frame - last_frame
         last_frame = current_frame
 
+        if mouse_click_delay {
+            if current_frame - mouse_click_time > 0.2 {
+                mouse_click_delay = false    
+            }
+        }
+
         // gl.VertexAttrib1d(cast(u32)time_location, current_frame)
 
         process_input(window)
@@ -462,7 +554,7 @@ main :: proc() {
 
         gl.BindTexture(gl.TEXTURE_2D, texture)
 
-        gl.ClearColor(0.1, 0.1, 0.1, 1.0)
+        gl.ClearColor(0.1, 0.5, 0.8, 1.0)
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
         // tm := glm.mat4Translate(cast(glm.vec3)positions[0])
